@@ -123,7 +123,7 @@ func StartWatcher(iface string, ignorePorts []uint16) {
 	portFilter := ""
 	for _, port := range ignorePorts {
 		filterPart := "not port " + fmt.Sprintf("%d", port)
-		if newFilter != "" {
+		if portFilter != "" {
 			portFilter += " and " + filterPart
 		} else {
 			portFilter += filterPart
@@ -144,7 +144,7 @@ func StartWatcher(iface string, ignorePorts []uint16) {
 			newFilter += " and not src host " + ip.String()
 		} else {
 			ifaceAddr = ip.String()
-			newFilter += "not src host " + ip.String()
+			newFilter += " not src host " + ip.String()
 		}
 
 	}

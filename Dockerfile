@@ -1,6 +1,6 @@
 FROM golang:1.17-alpine 
 
-RUN apk add libpcap-dev iptables gcc musl-dev
+RUN apk add libpcap-dev iptables gcc musl-dev openssl
 
 COPY . /opt/ports4u 
 

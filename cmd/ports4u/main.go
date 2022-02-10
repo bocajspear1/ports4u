@@ -31,11 +31,14 @@ func main() {
 		log.Fatalf("Unable to get address for interface %s, does it exist?\n", iface)
 	}
 
-	ignorePorts := []uint16{80}
+	ignorePorts := []uint16{80, 443}
 	watcher.StartWatcher(iface, ignorePorts)
 
 	httpService := services.NewHTTPService()
 	go httpService.Start(ifaceAddr, 80)
+
+	tlsService := services.NewTLSService()
+	go tlsService.Start(ifaceAddr, 443)
 
 	dnsService := services.NewDNSService()
 	dnsService.Start(ifaceAddr, 53)

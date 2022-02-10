@@ -18,6 +18,7 @@ type HTTPService struct {
 func (s *HTTPService) Start(address string, port uint16) error {
 	log.Printf("Starting HTTP server at %d\n", port)
 	s.port = port
+	AllowTCPPort(s.port)
 	http.HandleFunc("/", s.handleRequest)
 
 	err := http.ListenAndServe(":"+strconv.Itoa(int(s.port)), nil)

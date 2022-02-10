@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 var iptablesPath string = ""
@@ -27,6 +29,27 @@ func getIPtablesPath() string {
 		log.Printf("Got iptables path at %s\n", iptablesPath)
 	}
 	return iptablesPath
+}
+
+func PipeConn(srcConn *net.Conn, destConn *net.Conn) {
+
+	for {
+		(*srcConn).SetReadDeadline(time.Now().Add(20 * time.Second))
+		(*destConn).SetWriteDeadline(time.Now().Add(20 * time.Second))
+		smallBuffer := []byte{0}
+		bytesRead, err := (*srcConn).Read(smallBuffer)
+		if err != nil {
+			(*srcConn).Close()
+			return
+		}
+		if bytesRead > 0 {
+			_, err = (*destConn).Write(smallBuffer)
+			if err != nil {
+				(*destConn).Close()
+				return
+			}
+		}
+	}
 }
 
 func AllowTCPPort(port uint16) {

@@ -18,26 +18,6 @@ type PortService struct {
 	active    bool
 }
 
-func pipeConn(srcConn *net.Conn, destConn *net.Conn) {
-	(*srcConn).SetReadDeadline(time.Now().Add(20 * time.Second))
-	(*destConn).SetWriteDeadline(time.Now().Add(20 * time.Second))
-	for {
-		smallBuffer := make([]byte, 32)
-		bytesRead, err := (*srcConn).Read(smallBuffer)
-		if err != nil {
-			(*srcConn).Close()
-			return
-		}
-		if bytesRead > 0 {
-			_, err = (*destConn).Write(smallBuffer)
-			if err != nil {
-				(*destConn).Close()
-				return
-			}
-		}
-	}
-}
-
 func (s *PortService) forwardData(startData []byte, destPort uint16, lastConn *net.Conn) {
 	log.Printf("Forwarding to port %d\n", destPort)
 	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(int(destPort)))
@@ -46,8 +26,8 @@ func (s *PortService) forwardData(startData []byte, destPort uint16, lastConn *n
 		return
 	}
 	conn.Write(startData)
-	go pipeConn(&conn, lastConn)
-	pipeConn(lastConn, &conn)
+	go PipeConn(&conn, lastConn)
+	PipeConn(lastConn, &conn)
 	log.Printf("Finished forwarded connection\n")
 	s.connMutex.Lock()
 	s.connCount -= 1
@@ -91,6 +71,10 @@ func (s *PortService) tcpHandler(port uint16, conn net.Conn) {
 				log.Println("Think I found HTTP traffic!")
 				go s.forwardData(finalBuffer, 80, &conn)
 				forwarded = true
+			} else if bytes.HasPrefix(finalBuffer, []byte{0x16, 0x03, 0x01}) {
+				log.Println("Think I found SSL/TLS traffic!")
+				go s.forwardData(finalBuffer, 443, &conn)
+				forwarded = true
 			}
 			// bytesReadTotal += bytesRead
 			// if bytesReadTotal < toFileSize {
@@ -126,6 +110,8 @@ func (s *PortService) tcpHandler(port uint16, conn net.Conn) {
 		s.connMutex.Lock()
 		s.connCount -= 1
 		s.connMutex.Unlock()
+	} else {
+		log.Printf("Forwarding connection from %s:%d", remoteAddr, remotePort)
 	}
 
 }
