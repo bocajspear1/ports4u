@@ -1,13 +1,14 @@
 package services
 
 import (
-	"bytes"
 	"log"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bocajspear1/ports4u/internal/identify"
 )
 
 type PortService struct {
@@ -18,17 +19,42 @@ type PortService struct {
 	active    bool
 }
 
-func (s *PortService) forwardData(startData []byte, destPort uint16, lastConn *net.Conn) {
+func (s *PortService) forwardData(startData []byte, origPort uint16, destPort uint16, lastConn *net.Conn, cleartext bool) {
 	log.Printf("Forwarding to port %d\n", destPort)
 	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(int(destPort)))
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
+	remoteAddrSplit := strings.Split((*lastConn).RemoteAddr().String(), ":")
+	remoteAddr := remoteAddrSplit[0]
+
+	localAddrSplit := strings.Split(conn.LocalAddr().String(), ":")
+	localPort, err := strconv.Atoi(localAddrSplit[1])
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// Add the forward source port to a map so any service down the chain
+	// can convert to remote address
+	AddForwardPort(uint16(localPort), origPort, remoteAddr)
+
 	conn.Write(startData)
-	go PipeConn(&conn, lastConn)
-	PipeConn(lastConn, &conn)
+
+	// Only log data is we know we are cleartext
+	if cleartext {
+		go PipeConn(&conn, lastConn, LoggingOutbound)
+		PipeConn(lastConn, &conn, LoggingInbound)
+	} else {
+		go PipeConn(&conn, lastConn, LoggingNone)
+		PipeConn(lastConn, &conn, LoggingNone)
+	}
+
 	log.Printf("Finished forwarded connection\n")
+	RemoveForwardPort(uint16(localPort), remoteAddr)
+
 	s.connMutex.Lock()
 	s.connCount -= 1
 	s.connMutex.Unlock()
@@ -56,9 +82,10 @@ func (s *PortService) tcpHandler(port uint16, conn net.Conn) {
 
 	// var outFile *os.File
 	// var outPath string
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 	for !connDied && !forwarded {
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 		smallBuffer := make([]byte, chunkSize)
 
 		bytesRead, err := conn.Read(smallBuffer)
@@ -67,33 +94,19 @@ func (s *PortService) tcpHandler(port uint16, conn net.Conn) {
 			log.Printf("Read %d bytes\n", bytesRead)
 			finalBuffer = append(finalBuffer, smallBuffer[0:bytesRead]...)
 
-			if bytes.Contains(finalBuffer, []byte("HTTP/")) {
+			if identify.IsHTTP(finalBuffer) {
 				log.Println("Think I found HTTP traffic!")
-				go s.forwardData(finalBuffer, 80, &conn)
+				// Be sure to log the chunk of data we already got
+				LogInboundData(remoteAddr, uint16(remotePort), port, string(smallBuffer[0:bytesRead]))
+				go s.forwardData(finalBuffer, port, 80, &conn, true)
 				forwarded = true
-			} else if bytes.HasPrefix(finalBuffer, []byte{0x16, 0x03, 0x01}) {
+			} else if identify.IsTLS(finalBuffer) {
 				log.Println("Think I found SSL/TLS traffic!")
-				go s.forwardData(finalBuffer, 443, &conn)
+				go s.forwardData(finalBuffer, port, 443, &conn, false)
 				forwarded = true
+			} else {
+				LogInboundData(remoteAddr, uint16(remotePort), port, string(smallBuffer[0:bytesRead]))
 			}
-			// bytesReadTotal += bytesRead
-			// if bytesReadTotal < toFileSize {
-			// 	finalBuffer = append(finalBuffer, smallBuffer[0:bytesRead]...)
-			// } else {
-			// 	if outFile == nil {
-			// 		outPath = "./large/tcp-" + strconv.Itoa(port) + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".large"
-			// 		outFile, err = os.OpenFile(outPath, os.O_RDWR|os.O_CREATE, 0444)
-			// 		if err != nil {
-			// 			log.Printf("Could not open large file: %s\n", err)
-			// 			conn.Close()
-			// 			connDied = true
-			// 		}
-			// 		defer outFile.Close()
-			// 		outFile.Write(finalBuffer)
-			// 	}
-
-			// 	outFile.Write(smallBuffer[0:bytesRead])
-			// }
 
 		}
 
@@ -160,17 +173,10 @@ func (s *PortService) Start(address string, port uint16) error {
 
 		go s.tcpHandler(s.port, conn)
 	}
-
-	return nil
 }
 
 func NewPortService() *PortService {
 	service := new(PortService)
 	service.active = false
 	return service
-}
-
-func SpawnPortService(address string, port uint16) {
-	portSvc := NewPortService()
-	portSvc.Start(address, port)
 }

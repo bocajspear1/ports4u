@@ -8,7 +8,7 @@ import (
 )
 
 func (s *HTTPService) handleRequest(w http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(w, "Session not available\n")
+	fmt.Fprintf(w, "<html><head><title>Session Invalid></title></head><body>Session not available</body></html>\n")
 }
 
 type HTTPService struct {

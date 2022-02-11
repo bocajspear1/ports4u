@@ -1,13 +1,14 @@
 package services
 
 import (
-	"bytes"
 	"crypto/tls"
 	"log"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bocajspear1/ports4u/internal/identify"
 )
 
 type TLSService struct {
@@ -15,15 +16,17 @@ type TLSService struct {
 }
 
 func (s *TLSService) forwardData(startData []byte, destPort uint16, lastConn *net.Conn) {
-	log.Printf("Forwarding to port %d\n", destPort)
+	log.Printf("TLS forwarding to port %d\n", destPort)
 	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(int(destPort)))
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
 	conn.Write(startData)
-	go PipeConn(&conn, lastConn)
-	PipeConn(lastConn, &conn)
+	go PipeConn(&conn, lastConn, LoggingOutbound)
+	PipeConn(lastConn, &conn, LoggingInbound)
+
 	log.Printf("Finished forwarded TLS connection\n")
 }
 
@@ -45,11 +48,9 @@ func (s *TLSService) tlsTCPHandler(port uint16, conn net.Conn) {
 	forwarded := false
 	finalBuffer := make([]byte, 0)
 
-	// var outFile *os.File
-	// var outPath string
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-
 	for !connDied && !forwarded {
+		conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 		smallBuffer := make([]byte, chunkSize)
 
 		bytesRead, err := conn.Read(smallBuffer)
@@ -58,10 +59,13 @@ func (s *TLSService) tlsTCPHandler(port uint16, conn net.Conn) {
 			log.Printf("Read %d bytes\n", bytesRead)
 			finalBuffer = append(finalBuffer, smallBuffer[0:bytesRead]...)
 
-			if bytes.Contains(finalBuffer, []byte("HTTP/")) {
+			if identify.IsHTTP(finalBuffer) {
 				log.Println("Think I found HTTP traffic!")
+				LogInboundData(remoteAddr, uint16(remotePort), port, string(smallBuffer[0:bytesRead]))
 				go s.forwardData(finalBuffer, 80, &conn)
 				forwarded = true
+			} else {
+				LogInboundData(remoteAddr, uint16(remotePort), port, string(smallBuffer[0:bytesRead]))
 			}
 		}
 
@@ -110,8 +114,6 @@ func (s *TLSService) Start(address string, port uint16) error {
 
 		go s.tlsTCPHandler(s.port, conn)
 	}
-
-	return err
 }
 
 func NewTLSService() *TLSService {
