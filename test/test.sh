@@ -24,8 +24,8 @@ IP_ADDR=$(docker inspect ${NAME} | grep "IPAddress\":" | head -n 1 | sed 's_^[ \
 
 echo "hello how are you" | nc -q 2 ${IP_ADDR} 8080
 
-
-echo -e "\nChecking basic ports"
+echo ""
+echo "\nChecking basic ports"
 
 LOG_NAME=${GATEWAY}-8080.log
 
@@ -33,7 +33,8 @@ docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
 verify_data ${LOG_NAME} "hello how are you"
 rm /tmp/${LOG_NAME}
 
-echo -e "\nChecking default HTTP"
+echo ""
+echo "\nChecking default HTTP"
 
 LOG_NAME=${GATEWAY}-80.log
 
@@ -45,7 +46,8 @@ verify_data ${LOG_NAME} "<<<<<<<<"
 verify_data ${LOG_NAME} "GET / HTTP"
 rm /tmp/${LOG_NAME}
 
-echo -e "\nChecking default HTTPS"
+echo ""
+echo "\nChecking default HTTPS"
 
 LOG_NAME=${GATEWAY}-443.log
 
@@ -59,8 +61,8 @@ verify_data ${LOG_NAME} ">>>>>>>>"
 verify_data ${LOG_NAME} "Session Invalid"
 rm /tmp/${LOG_NAME}
 
-
-echo -e "\nChecking offport HTTP"
+echo ""
+echo "Checking offport HTTP"
 
 LOG_NAME=${GATEWAY}-9999.log
 
@@ -74,7 +76,8 @@ verify_data ${LOG_NAME} ">>>>>>>>"
 verify_data ${LOG_NAME} "Session Invalid"
 rm /tmp/${LOG_NAME}
 
-echo -e "\nChecking offport HTTPS"
+echo ""
+echo "Checking offport HTTPS"
 
 LOG_NAME=${GATEWAY}-3000.log
 
