@@ -4,10 +4,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"strconv"
+	"strings"
 )
 
 func (s *HTTPService) handleRequest(w http.ResponseWriter, req *http.Request) {
+
+	remoteAddrSplit := strings.Split(req.RemoteAddr, ":")
+	remoteAddr := remoteAddrSplit[0]
+	if remoteAddr != "127.0.0.1" {
+		inBytes, err := httputil.DumpRequest(req, true)
+		if err == nil {
+			logger := GetRemoteLogger(remoteAddr, s.port)
+			logger.WriteInbound(string(inBytes))
+		}
+
+	}
+
 	fmt.Fprintf(w, "<html><head><title>Session Invalid></title></head><body>Session not available</body></html>\n")
 }
 

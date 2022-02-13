@@ -38,7 +38,7 @@ func getIPtablesPath() string {
 	return iptablesPath
 }
 
-func getRemoteLogger(remoteAddr string, port uint16) *CommLogger {
+func GetRemoteLogger(remoteAddr string, port uint16) *CommLogger {
 	remoteMutex.Lock()
 	if remoteMap == nil {
 		remoteMap = make(map[string]*CommLogger)
@@ -108,7 +108,7 @@ func PipeConn(srcConn *net.Conn, destConn *net.Conn, loggingType LogType) {
 		}
 		remotePort = p
 		// And the local port is on the source connection too
-		localAddrSplit := strings.Split((*destConn).LocalAddr().String(), ":")
+		localAddrSplit := strings.Split((*srcConn).LocalAddr().String(), ":")
 		// localAddr = localAddrSplit[0]
 		lp, err := strconv.Atoi(localAddrSplit[1])
 		if err != nil {
@@ -121,7 +121,8 @@ func PipeConn(srcConn *net.Conn, destConn *net.Conn, loggingType LogType) {
 		if remoteAddr == "127.0.0.1" {
 			logger = getLoggerFromPort(uint16(remotePort))
 		} else {
-			logger = getRemoteLogger(remoteAddr, localPort)
+			log.Println("Hello")
+			logger = GetRemoteLogger(remoteAddr, localPort)
 		}
 	}
 
@@ -185,7 +186,7 @@ func AddForwardPort(localPort uint16, destPort uint16, remoteAddr string) {
 	if portMap == nil {
 		portMap = make(map[uint16]*CommLogger)
 	}
-	portMap[localPort] = getRemoteLogger(remoteAddr, destPort)
+	portMap[localPort] = GetRemoteLogger(remoteAddr, destPort)
 	portMutex.Unlock()
 }
 
@@ -204,7 +205,7 @@ func LogInboundData(remoteAddr string, remotePort uint16, port uint16, data stri
 	if remoteAddr == "127.0.0.1" {
 		logger = getLoggerFromPort(remotePort)
 	} else {
-		logger = getRemoteLogger(remoteAddr, port)
+		logger = GetRemoteLogger(remoteAddr, port)
 	}
 	logger.WriteInbound(data)
 }

@@ -10,4 +10,6 @@ RUN cd /opt/ports4u && go build -o ports4u cmd/ports4u/main.go
 
 RUN chmod +x /opt/ports4u/entrypoint.sh
 
+WORKDIR /opt/ports4u/
+
 ENTRYPOINT ["/opt/ports4u/entrypoint.sh"]
