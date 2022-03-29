@@ -98,7 +98,9 @@ LOG_NAME=dns-test
 
 dig @${IP_ADDR} another.com 
 dig @${IP_ADDR} test.com > /tmp/${LOG_NAME}
-verify_data ${LOG_NAME} "   ${IP_ADDR}"
+sed -i 's_\t_ _g' /tmp/${LOG_NAME}
+verify_data ${LOG_NAME} "test.com."
+verify_data ${LOG_NAME} "IN A ${IP_ADDR}"
 verify_data ${LOG_NAME} ";; ANSWER SECTION:"
 rm /tmp/${LOG_NAME}
 
