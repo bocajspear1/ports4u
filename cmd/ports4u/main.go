@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/bocajspear1/ports4u/internal/services"
 	"github.com/bocajspear1/ports4u/internal/watcher"
@@ -13,23 +14,40 @@ func main() {
 	iface := os.Getenv("IFACE")
 	ifaceAddr := ""
 
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		log.Fatalf("Unable to get interfaces\n")
-	}
-	for _, localIface := range ifaces {
-		if localIface.Name == iface {
-			addrs, err := localIface.Addrs()
-			if err != nil {
-				log.Fatalf("Unable to get addresses for interface %s\n", iface)
+	ok := false
+	counter := 0
+	for !ok && counter < 4 {
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			log.Fatalf("Unable to get interfaces\n")
+		}
+
+		for _, localIface := range ifaces {
+			if localIface.Name == iface {
+				addrs, err := localIface.Addrs()
+				if err != nil {
+					log.Fatalf("Unable to get addresses for interface %s\n", iface)
+				}
+				ip, _, err := net.ParseCIDR(addrs[0].String())
+				ifaceAddr = ip.String()
 			}
-			ifaceAddr = addrs[0].String()
+		}
+
+		if ifaceAddr == "" {
+			counter += 1
+			time.Sleep(500 * time.Millisecond)
+		} else {
+			ok = true
 		}
 	}
 
-	if iface == "" {
+	if !ok {
 		log.Fatalf("Unable to get address for interface %s, does it exist?\n", iface)
+	} else {
+		log.Printf("Got address of %s for iface %s\n", ifaceAddr, iface)
 	}
+
+	services.AddRedirect(ifaceAddr)
 
 	ignorePorts := []uint16{80, 443}
 	watcher.StartWatcher(iface, ignorePorts)

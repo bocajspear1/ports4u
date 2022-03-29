@@ -38,6 +38,16 @@ func getIPtablesPath() string {
 	return iptablesPath
 }
 
+func CheckLogDir() {
+	if _, err := os.Stat("./logs"); os.IsNotExist(err) {
+		log.Println("Creating logs directory")
+		err := os.Mkdir("./logs", 0755)
+		if err != nil {
+			log.Fatalln(err)
+		}
+	}
+}
+
 func GetRemoteLogger(remoteAddr string, port uint16) *CommLogger {
 	remoteMutex.Lock()
 	if remoteMap == nil {
@@ -46,13 +56,7 @@ func GetRemoteLogger(remoteAddr string, port uint16) *CommLogger {
 	key := remoteAddr + "-" + fmt.Sprintf("%d", port)
 	l, ok := remoteMap[key]
 	if !ok {
-		if _, err := os.Stat("./logs"); os.IsNotExist(err) {
-			log.Println("Creating logs directory")
-			err := os.Mkdir("./logs", 0755)
-			if err != nil {
-				log.Fatalln(err)
-			}
-		}
+		CheckLogDir()
 		n, err := NewCommLogger("./logs/"+key+".log", port, remoteAddr)
 		if err != nil {
 			log.Fatalln(err)
@@ -153,6 +157,22 @@ func PipeConn(srcConn *net.Conn, destConn *net.Conn, loggingType LogType) {
 func AllowTCPPort(port uint16) {
 	iptables := getIPtablesPath()
 	cmd := exec.Command(iptables, "-I", "OUTPUT", "1", "-w", "-p", "tcp", "--dport", fmt.Sprintf("%d", port), "-j", "ACCEPT")
+
+	var outBuffer, errBuffer bytes.Buffer
+	cmd.Stdout = &outBuffer
+	cmd.Stderr = &errBuffer
+
+	err := cmd.Run()
+
+	if err != nil {
+		log.Println("out:", outBuffer.String(), "err:", errBuffer.String())
+		log.Fatal(err)
+	}
+}
+
+func AddRedirect(localIP string) {
+	iptables := getIPtablesPath()
+	cmd := exec.Command(iptables, "-A", "PREROUTING", "-t", "nat", "!", "-d", localIP, "-j", "DNAT", "--to-destination", localIP)
 
 	var outBuffer, errBuffer bytes.Buffer
 	cmd.Stdout = &outBuffer

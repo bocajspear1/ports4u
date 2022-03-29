@@ -90,3 +90,39 @@ verify_data ${LOG_NAME} "GET / HTTP"
 verify_data ${LOG_NAME} ">>>>>>>>"
 verify_data ${LOG_NAME} "Session Invalid"
 rm /tmp/${LOG_NAME}
+
+echo ""
+echo "Checking DNS"
+
+LOG_NAME=dns-test
+
+dig @${IP_ADDR} another.com 
+dig @${IP_ADDR} test.com > /tmp/${LOG_NAME}
+verify_data ${LOG_NAME} "   ${IP_ADDR}"
+verify_data ${LOG_NAME} ";; ANSWER SECTION:"
+rm /tmp/${LOG_NAME}
+
+LOG_NAME=domains.txt
+docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
+verify_data ${LOG_NAME} "test.com."
+verify_data ${LOG_NAME} "another.com."
+rm /tmp/${LOG_NAME}
+
+
+echo ""
+echo "Checking redirection"
+
+sudo ip route add 192.168.55.0/24 via ${IP_ADDR}
+TEST_IP="192.168.55.4"
+
+LOG_NAME=${GATEWAY}-4545.log
+
+curl -s http://${TEST_IP}:4545 >/dev/null
+
+docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
+
+verify_data ${LOG_NAME} "<<<<<<<<"
+verify_data ${LOG_NAME} "GET / HTTP"
+verify_data ${LOG_NAME} ">>>>>>>>"
+verify_data ${LOG_NAME} "Session Invalid"
+rm /tmp/${LOG_NAME}
