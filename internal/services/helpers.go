@@ -18,6 +18,7 @@ var portMap map[uint16]*CommLogger
 var portMutex sync.Mutex
 var remoteMap map[string]*CommLogger
 var remoteMutex sync.Mutex
+var logDirMutex sync.Mutex
 
 func getIPtablesPath() string {
 	if iptablesPath == "" {
@@ -39,6 +40,7 @@ func getIPtablesPath() string {
 }
 
 func CheckLogDir() {
+	logDirMutex.Lock()
 	if _, err := os.Stat("./logs"); os.IsNotExist(err) {
 		log.Println("Creating logs directory")
 		err := os.Mkdir("./logs", 0755)
@@ -46,6 +48,7 @@ func CheckLogDir() {
 			log.Fatalln(err)
 		}
 	}
+	logDirMutex.Unlock()
 }
 
 func GetRemoteLogger(remoteAddr string, port uint16) *CommLogger {
@@ -125,7 +128,6 @@ func PipeConn(srcConn *net.Conn, destConn *net.Conn, loggingType LogType) {
 		if remoteAddr == "127.0.0.1" {
 			logger = getLoggerFromPort(uint16(remotePort))
 		} else {
-			log.Println("Hello")
 			logger = GetRemoteLogger(remoteAddr, localPort)
 		}
 	}
@@ -133,19 +135,19 @@ func PipeConn(srcConn *net.Conn, destConn *net.Conn, loggingType LogType) {
 	for {
 		(*srcConn).SetReadDeadline(time.Now().Add(20 * time.Second))
 		(*destConn).SetWriteDeadline(time.Now().Add(20 * time.Second))
-		smallBuffer := []byte{0}
+		smallBuffer := make([]byte, 512)
 		bytesRead, err := (*srcConn).Read(smallBuffer)
 		if err != nil {
 			(*srcConn).Close()
 			return
 		}
 		if loggingType == LoggingOutbound {
-			logger.WriteOutbound(string(smallBuffer))
+			logger.WriteOutbound(string(smallBuffer[0:bytesRead]))
 		} else if loggingType == LoggingInbound {
-			logger.WriteInbound(string(smallBuffer))
+			logger.WriteInbound(string(smallBuffer[0:bytesRead]))
 		}
 		if bytesRead > 0 {
-			_, err = (*destConn).Write(smallBuffer)
+			_, err = (*destConn).Write(smallBuffer[0:bytesRead])
 			if err != nil {
 				(*destConn).Close()
 				return
@@ -170,9 +172,9 @@ func AllowTCPPort(port uint16) {
 	}
 }
 
-func AddRedirect(localIP string) {
+func AddRedirect(localIP string, iface string) {
 	iptables := getIPtablesPath()
-	cmd := exec.Command(iptables, "-A", "PREROUTING", "-t", "nat", "!", "-d", localIP, "-j", "DNAT", "--to-destination", localIP)
+	cmd := exec.Command(iptables, "-A", "PREROUTING", "-t", "nat", "!", "-d", localIP, "-i", iface, "-j", "DNAT", "--to-destination", localIP)
 
 	var outBuffer, errBuffer bytes.Buffer
 	cmd.Stdout = &outBuffer

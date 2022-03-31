@@ -5,10 +5,13 @@
 package watcher
 
 import (
-	"fmt"
+	"io/ioutil"
 	"log"
+	"math/rand"
 	"net"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/bocajspear1/ports4u/internal/services"
 	"github.com/google/gopacket"
@@ -29,7 +32,37 @@ func logPacket(protocol gopacket.LayerType, port uint16, outFile *os.File) {
 
 }
 
-func watcherRun(ipaddr string, iface string, pcapFilter string) {
+func logUniqueAddr(new_ip string) {
+	services.CheckLogDir()
+	ipFilePath := "./logs/ip_list.txt"
+
+	ipFile, err := ioutil.ReadFile(ipFilePath)
+	found := false
+	if err == nil {
+		ips := strings.Split(string(ipFile), "\n")
+		for _, ip := range ips {
+			if new_ip == ip {
+				found = true
+			}
+		}
+	}
+
+	if !found {
+		// Log all DNS requests
+		out, err := os.OpenFile(ipFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatal("Failed to open " + ipFilePath)
+		}
+		_, err = out.Write([]byte(new_ip + "\n"))
+		if err != nil {
+			log.Fatal("Failed to write to " + ipFilePath)
+		}
+		out.Close()
+	}
+
+}
+
+func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, ignorePorts []uint16) {
 
 	serviceMap = make(map[uint16]*services.PortService)
 
@@ -54,8 +87,9 @@ func watcherRun(ipaddr string, iface string, pcapFilter string) {
 	var eth layers.Ethernet
 	var ip4 layers.IPv4
 	var ip6 layers.IPv6
+	var arp layers.ARP
 
-	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &ip6, &tcp, &udp)
+	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &ip6, &tcp, &udp, &arp)
 	decodedPacket := []gopacket.LayerType{}
 
 	pcapPacket := gopacket.NewPacketSource(pcapHandle, pcapHandle.LinkType())
@@ -69,31 +103,115 @@ func watcherRun(ipaddr string, iface string, pcapFilter string) {
 
 		for _, layerType := range decodedPacket {
 			if layerType == layers.LayerTypeTCP {
-				if tcp.SYN {
-					log.Printf("Got TCP on port %d\n", tcp.DstPort)
+				if tcp.SYN && !tcp.ACK {
+
 					port := uint16(tcp.DstPort)
-					_, ok := serviceMap[port]
-					if !ok {
-						log.Printf("New port service for %d\n", tcp.DstPort)
-						serviceMap[port] = services.NewPortService()
-					} else {
-						if !serviceMap[port].IsActive() {
-							delete(serviceMap, port)
-							serviceMap[port] = services.NewPortService()
+					found := false
+
+					if strings.ToLower(eth.SrcMAC.String()) == mac {
+						found = true
+					}
+
+					for _, p := range ignorePorts {
+						if p == port {
+							found = true
 						}
 					}
 
-					if !serviceMap[port].IsActive() {
-						log.Printf("Starting\n")
-						go serviceMap[port].Start(ipaddr, port)
+					srcPort := uint16(tcp.SrcPort)
+					for _, p := range ignorePorts {
+						if p == srcPort {
+							found = true
+						}
+					}
+
+					if ip4.DstIP.String() == "127.0.0.1" || ip4.SrcIP.String() == "127.0.0.1" {
+						found = true
+					}
+
+					if !found {
+						log.Printf("Got TCP on port %d\n", tcp.DstPort)
+						_, ok := serviceMap[port]
+						if !ok {
+							log.Printf("New port service for %d\n", tcp.DstPort)
+							serviceMap[port] = services.NewPortService()
+						} else {
+							if !serviceMap[port].IsActive() {
+								delete(serviceMap, port)
+								serviceMap[port] = services.NewPortService()
+							}
+						}
+
+						if !serviceMap[port].IsActive() {
+							log.Printf("Starting\n")
+							go serviceMap[port].Start(ipaddr, port)
+						} else {
+							log.Printf("Using existing\n")
+						}
 					} else {
-						log.Printf("Using existing\n")
+						log.Printf("Found port %d:%d\n", tcp.DstPort, tcp.SrcPort)
 					}
 
 				}
 			} else if layerType == layers.LayerTypeUDP {
 
+			} else if layerType == layers.LayerTypeIPv4 {
+				if ip4.DstIP.String() != ipaddr && ip4.SrcIP.String() != ipaddr && strings.ToLower(eth.SrcMAC.String()) != mac {
+					logUniqueAddr(ip4.DstIP.String())
+				}
+
+			} else if layerType == layers.LayerTypeARP {
+				destIP := net.IP(arp.DstProtAddress).String()
+
+				if ipaddr != destIP {
+					logUniqueAddr(destIP)
+					randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
+					num := randGen.Intn(6)
+
+					if num < 2 {
+						log.Printf("Sending ARP response for %s\n", destIP)
+						localMac, err := net.ParseMAC(mac)
+						if err != nil {
+							log.Println(err)
+						}
+						newEth := layers.Ethernet{
+							SrcMAC:       localMac,
+							DstMAC:       eth.SrcMAC,
+							EthernetType: layers.EthernetTypeARP,
+						}
+						newArp := layers.ARP{
+							AddrType:          layers.LinkTypeEthernet,
+							Protocol:          layers.EthernetTypeIPv4,
+							HwAddressSize:     6,
+							ProtAddressSize:   4,
+							Operation:         layers.ARPReply,
+							SourceHwAddress:   []byte(localMac),
+							SourceProtAddress: arp.DstProtAddress,
+							DstHwAddress:      []byte(arp.SourceHwAddress),
+							DstProtAddress:    []byte(arp.SourceProtAddress),
+						}
+
+						newBuf := gopacket.NewSerializeBuffer()
+						opts := gopacket.SerializeOptions{
+							FixLengths:       true,
+							ComputeChecksums: true,
+						}
+
+						err = gopacket.SerializeLayers(newBuf, opts, &newEth, &newArp)
+						if err != nil {
+							log.Println(err)
+						}
+
+						if err := pcapHandle.WritePacketData(newBuf.Bytes()); err != nil {
+							log.Println(err)
+						}
+					} else {
+
+					}
+				}
+
 			}
+
 		}
 
 	}
@@ -101,56 +219,18 @@ func watcherRun(ipaddr string, iface string, pcapFilter string) {
 }
 
 // StartWatcher starts the missed port watcher
-func StartWatcher(iface string, ignorePorts []uint16) {
+func StartWatcher(iface string, ipaddr string, mac string, ignorePorts []uint16) {
 
 	newFilter := ""
 
-	// Get interface address info so we don't intercept data sent by us
-	ifaceInfo, err := net.InterfaceByName(iface)
-	if err != nil {
-		log.Fatalf("Could not get interface %s\n", iface)
-		return
-	}
-
-	addrs, err := ifaceInfo.Addrs()
-	if err != nil {
-		log.Fatalf("Could not get interface %s addresses\n", iface)
-		return
-	}
-
-	ifaceAddr := ""
-
-	portFilter := ""
-	for _, port := range ignorePorts {
-		filterPart := "not port " + fmt.Sprintf("%d", port)
-		if portFilter != "" {
-			portFilter += " and " + filterPart
-		} else {
-			portFilter += filterPart
-		}
-	}
-
-	newFilter += portFilter + " "
-
-	for _, addr := range addrs {
-		var ip net.IP
-		switch v := addr.(type) {
-		case *net.IPNet:
-			ip = v.IP
-		case *net.IPAddr:
-			ip = v.IP
-		}
-		if newFilter != "" {
-			newFilter += " and not src host " + ip.String()
-		} else {
-			ifaceAddr = ip.String()
-			newFilter += " not src host " + ip.String()
-		}
-
+	if newFilter != "" {
+		newFilter += " and not src host " + ipaddr
+	} else {
+		newFilter += " not src host " + ipaddr
 	}
 
 	log.Printf("Watcher filter: \n\n%s\n\n", newFilter)
 
 	log.Println("Starting missed port watcher...")
-	go watcherRun(ifaceAddr, iface, newFilter)
+	go watcherRun(ipaddr, mac, iface, newFilter, ignorePorts)
 }

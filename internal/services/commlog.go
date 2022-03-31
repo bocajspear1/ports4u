@@ -3,6 +3,7 @@ package services
 import (
 	"log"
 	"os"
+	"strconv"
 	"sync"
 )
 
@@ -21,6 +22,11 @@ type CommLogger struct {
 	remoteAddr  string
 }
 
+func escapeString(data string) string {
+	newString := strconv.QuoteToASCII(data)
+	return newString[1:len(newString)-1] + "\n"
+}
+
 func (c *CommLogger) WriteOutbound(data string) {
 	c.logMutex.Lock()
 	if !c.logOutbound {
@@ -28,7 +34,7 @@ func (c *CommLogger) WriteOutbound(data string) {
 		c.fileHandle.Sync()
 		c.logOutbound = true
 	}
-	c.fileHandle.WriteString(data)
+	c.fileHandle.WriteString(escapeString(data))
 	c.fileHandle.Sync()
 
 	c.logMutex.Unlock()
@@ -41,7 +47,7 @@ func (c *CommLogger) WriteInbound(data string) {
 		c.fileHandle.Sync()
 		c.logOutbound = false
 	}
-	c.fileHandle.WriteString(data)
+	c.fileHandle.WriteString(escapeString(data))
 	c.fileHandle.Sync()
 
 	c.logMutex.Unlock()

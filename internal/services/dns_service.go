@@ -35,6 +35,7 @@ func (s *DNSService) handleRequest(wr dns.ResponseWriter, query *dns.Msg) {
 				}
 				out.Close()
 
+				// Make response
 				aRec := &dns.A{
 					Hdr: dns.RR_Header{
 						Name:   question.Name,

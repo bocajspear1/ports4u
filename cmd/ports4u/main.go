@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bocajspear1/ports4u/internal/services"
@@ -13,6 +14,7 @@ import (
 func main() {
 	iface := os.Getenv("IFACE")
 	ifaceAddr := ""
+	ifaceMAC := ""
 
 	ok := false
 	counter := 0
@@ -30,6 +32,7 @@ func main() {
 				}
 				ip, _, err := net.ParseCIDR(addrs[0].String())
 				ifaceAddr = ip.String()
+				ifaceMAC = strings.ToLower(localIface.HardwareAddr.String())
 			}
 		}
 
@@ -47,10 +50,10 @@ func main() {
 		log.Printf("Got address of %s for iface %s\n", ifaceAddr, iface)
 	}
 
-	services.AddRedirect(ifaceAddr)
+	services.AddRedirect(ifaceAddr, iface)
 
 	ignorePorts := []uint16{80, 443}
-	watcher.StartWatcher(iface, ignorePorts)
+	watcher.StartWatcher(iface, ifaceAddr, ifaceMAC, ignorePorts)
 
 	httpService := services.NewHTTPService()
 	go httpService.Start(ifaceAddr, 80)
