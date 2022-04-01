@@ -23,6 +23,7 @@ import (
 // https://godoc.org/github.com/google/gopacket/pcap
 
 var serviceMap map[uint16]*services.PortService
+var arpMap map[string]uint16
 
 func logPacket(protocol gopacket.LayerType, port uint16, outFile *os.File) {
 
@@ -48,7 +49,7 @@ func logUniqueAddr(new_ip string) {
 	}
 
 	if !found {
-		// Log all DNS requests
+		// Log IP if it hasn't been found already
 		out, err := os.OpenFile(ipFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Fatal("Failed to open " + ipFilePath)
@@ -65,6 +66,7 @@ func logUniqueAddr(new_ip string) {
 func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, ignorePorts []uint16) {
 
 	serviceMap = make(map[uint16]*services.PortService)
+	arpMap = make(map[string]uint16)
 
 	pcapHandle, err := pcap.OpenLive(iface, 1600, true, pcap.BlockForever)
 
@@ -96,22 +98,25 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 	for packet := range pcapPacket.Packets() {
 
 		err = parser.DecodeLayers(packet.Data(), &decodedPacket)
-		// if err != nil {
-		// 	fmt.Printf("err: %s\n", err)
-		// 	continue
-		// }
 
 		for _, layerType := range decodedPacket {
 			if layerType == layers.LayerTypeTCP {
+				// Check for SYN-only packets (connection start)
 				if tcp.SYN && !tcp.ACK {
 
 					port := uint16(tcp.DstPort)
 					found := false
 
+					// Ignore any connection created by our own container
+					// This should not normally happen
 					if strings.ToLower(eth.SrcMAC.String()) == mac {
 						found = true
 					}
 
+					// Ensure we ignore ports we provide and don't try to
+					// create a listener on that port
+					// We don't use a filter so we can pick up remote IPs, even if they
+					// go to the ports we ignore
 					for _, p := range ignorePorts {
 						if p == port {
 							found = true
@@ -125,10 +130,12 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 						}
 					}
 
+					// Ignore anything going local, such as port forwarding
 					if ip4.DstIP.String() == "127.0.0.1" || ip4.SrcIP.String() == "127.0.0.1" {
 						found = true
 					}
 
+					// Create listener if it doesn't match anything above
 					if !found {
 						log.Printf("Got TCP on port %d\n", tcp.DstPort)
 						_, ok := serviceMap[port]
@@ -148,8 +155,6 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 						} else {
 							log.Printf("Using existing\n")
 						}
-					} else {
-						log.Printf("Found port %d:%d\n", tcp.DstPort, tcp.SrcPort)
 					}
 
 				}
@@ -164,49 +169,72 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 				destIP := net.IP(arp.DstProtAddress).String()
 
 				if ipaddr != destIP {
+					// Record the local IP attempted
 					logUniqueAddr(destIP)
+					// We randomly might or might not respond to ARP
+					// We can do this since the iptables rule will redirect any connections
 					randGen := rand.New(rand.NewSource(time.Now().UnixNano()))
 					num := randGen.Intn(6)
 
 					if num < 2 {
-						log.Printf("Sending ARP response for %s\n", destIP)
-						localMac, err := net.ParseMAC(mac)
-						if err != nil {
-							log.Println(err)
-						}
-						newEth := layers.Ethernet{
-							SrcMAC:       localMac,
-							DstMAC:       eth.SrcMAC,
-							EthernetType: layers.EthernetTypeARP,
-						}
-						newArp := layers.ARP{
-							AddrType:          layers.LinkTypeEthernet,
-							Protocol:          layers.EthernetTypeIPv4,
-							HwAddressSize:     6,
-							ProtAddressSize:   4,
-							Operation:         layers.ARPReply,
-							SourceHwAddress:   []byte(localMac),
-							SourceProtAddress: arp.DstProtAddress,
-							DstHwAddress:      []byte(arp.SourceHwAddress),
-							DstProtAddress:    []byte(arp.SourceProtAddress),
+						_, ok := arpMap[destIP]
+						if !ok {
+							log.Printf("Sending ARP response for %s\n", destIP)
+							localMac, err := net.ParseMAC(mac)
+							if err != nil {
+								log.Println(err)
+							}
+							newEth := layers.Ethernet{
+								SrcMAC:       localMac,
+								DstMAC:       eth.SrcMAC,
+								EthernetType: layers.EthernetTypeARP,
+							}
+							newArp := layers.ARP{
+								AddrType:          layers.LinkTypeEthernet,
+								Protocol:          layers.EthernetTypeIPv4,
+								HwAddressSize:     6,
+								ProtAddressSize:   4,
+								Operation:         layers.ARPReply,
+								SourceHwAddress:   []byte(localMac),
+								SourceProtAddress: arp.DstProtAddress,
+								DstHwAddress:      []byte(arp.SourceHwAddress),
+								DstProtAddress:    []byte(arp.SourceProtAddress),
+							}
+
+							newBuf := gopacket.NewSerializeBuffer()
+							opts := gopacket.SerializeOptions{
+								FixLengths:       true,
+								ComputeChecksums: true,
+							}
+
+							err = gopacket.SerializeLayers(newBuf, opts, &newEth, &newArp)
+							if err != nil {
+								log.Println(err)
+							}
+
+							if err := pcapHandle.WritePacketData(newBuf.Bytes()); err != nil {
+								log.Println(err)
+							}
+						} else {
+							// We did not send before, don't send now even though it passed
+							log.Printf("Found countdown, no ARP response for %s\n", destIP)
+							arpMap[destIP] -= 1
+							if arpMap[destIP] == 0 {
+								delete(arpMap, destIP)
+							}
 						}
 
-						newBuf := gopacket.NewSerializeBuffer()
-						opts := gopacket.SerializeOptions{
-							FixLengths:       true,
-							ComputeChecksums: true,
-						}
-
-						err = gopacket.SerializeLayers(newBuf, opts, &newEth, &newArp)
-						if err != nil {
-							log.Println(err)
-						}
-
-						if err := pcapHandle.WritePacketData(newBuf.Bytes()); err != nil {
-							log.Println(err)
-						}
 					} else {
-
+						_, ok := arpMap[destIP]
+						if !ok {
+							arpMap[destIP] = 2
+						} else {
+							arpMap[destIP] -= 1
+						}
+						log.Printf("No ARP response for %s\n", destIP)
+						if arpMap[destIP] == 0 {
+							delete(arpMap, destIP)
+						}
 					}
 				}
 
@@ -226,7 +254,7 @@ func StartWatcher(iface string, ipaddr string, mac string, ignorePorts []uint16)
 	if newFilter != "" {
 		newFilter += " and not src host " + ipaddr
 	} else {
-		newFilter += " not src host " + ipaddr
+		newFilter += "not src host " + ipaddr
 	}
 
 	log.Printf("Watcher filter: \n\n%s\n\n", newFilter)
