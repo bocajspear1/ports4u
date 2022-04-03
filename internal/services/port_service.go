@@ -107,7 +107,8 @@ func (s *PortService) tcpHandler(port uint16, conn net.Conn) {
 			} else {
 				LogInboundData(remoteAddr, uint16(remotePort), port, string(smallBuffer[0:bytesRead]))
 			}
-
+		} else {
+			LogInboundData(remoteAddr, uint16(remotePort), port, "")
 		}
 
 		if err != nil {

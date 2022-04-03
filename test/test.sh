@@ -128,3 +128,14 @@ verify_data ${LOG_NAME} "GET / HTTP"
 verify_data ${LOG_NAME} ">>>>>>>>"
 verify_data ${LOG_NAME} "Session Invalid"
 rm /tmp/${LOG_NAME}
+
+echo ""
+echo "Checking empty connection (no data)"
+
+LOG_NAME=${GATEWAY}-7070.log
+
+nc -z ${TEST_IP} 7070 
+
+docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
+verify_data ${LOG_NAME} "<<<<<<<< ${GATEWAY}"
+rm /tmp/${LOG_NAME}
