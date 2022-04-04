@@ -27,12 +27,11 @@ func main() {
 		for _, localIface := range ifaces {
 			if localIface.Name == iface {
 				addrs, err := localIface.Addrs()
-				if err != nil {
-					log.Fatalf("Unable to get addresses for interface %s\n", iface)
+				if err == nil && len(addrs) > 0 {
+					ip, _, _ := net.ParseCIDR(addrs[0].String())
+					ifaceAddr = ip.String()
+					ifaceMAC = strings.ToLower(localIface.HardwareAddr.String())
 				}
-				ip, _, err := net.ParseCIDR(addrs[0].String())
-				ifaceAddr = ip.String()
-				ifaceMAC = strings.ToLower(localIface.HardwareAddr.String())
 			}
 		}
 
