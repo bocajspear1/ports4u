@@ -144,9 +144,7 @@ rm /tmp/${LOG_NAME}
 echo ""
 echo "Testing basic UDP"
 
-nc -u ${TEST_IP} 1111 
-
-
+echo "hi" | nc -w 1 -u ${TEST_IP} 1111 
 
 echo ""
 echo "Testing conn_list"
