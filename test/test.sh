@@ -139,3 +139,28 @@ nc -z ${TEST_IP} 7070
 docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
 verify_data ${LOG_NAME} "<<<<<<<< ${GATEWAY}"
 rm /tmp/${LOG_NAME}
+
+
+echo ""
+echo "Testing basic UDP"
+
+nc -u ${TEST_IP} 1111 
+
+
+
+echo ""
+echo "Testing conn_list"
+
+LOG_NAME=conn_list.txt
+
+docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:80"
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:8080"
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:9999"
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:3000"
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:443"
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:4545"
+verify_data ${LOG_NAME} "tcp:${TEST_IP}:7070"
+verify_data ${LOG_NAME} "udp:${TEST_IP}:1111"
+
+rm /tmp/${LOG_NAME}

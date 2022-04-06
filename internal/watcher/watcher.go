@@ -5,6 +5,7 @@
 package watcher
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -33,16 +34,14 @@ func logPacket(protocol gopacket.LayerType, port uint16, outFile *os.File) {
 
 }
 
-func logUniqueAddr(new_ip string) {
+func logUnique(outFilePath string, new_item string) {
 	services.CheckLogDir()
-	ipFilePath := "./logs/ip_list.txt"
-
-	ipFile, err := ioutil.ReadFile(ipFilePath)
+	outFile, err := ioutil.ReadFile(outFilePath)
 	found := false
 	if err == nil {
-		ips := strings.Split(string(ipFile), "\n")
+		ips := strings.Split(string(outFile), "\n")
 		for _, ip := range ips {
-			if new_ip == ip {
+			if new_item == ip {
 				found = true
 			}
 		}
@@ -50,16 +49,29 @@ func logUniqueAddr(new_ip string) {
 
 	if !found {
 		// Log IP if it hasn't been found already
-		out, err := os.OpenFile(ipFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		out, err := os.OpenFile(outFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Fatal("Failed to open " + ipFilePath)
+			log.Fatal("Failed to open " + outFilePath)
 		}
-		_, err = out.Write([]byte(new_ip + "\n"))
+		_, err = out.Write([]byte(new_item + "\n"))
 		if err != nil {
-			log.Fatal("Failed to write to " + ipFilePath)
+			log.Fatal("Failed to write to " + outFilePath)
 		}
 		out.Close()
 	}
+}
+
+func logUniqueAddr(new_ip string) {
+
+	ipFilePath := "./logs/ip_list.txt"
+	logUnique(ipFilePath, new_ip)
+
+}
+
+func logUniqueConn(new_conn string) {
+
+	connFilePath := "./logs/conn_list.txt"
+	logUnique(connFilePath, new_conn)
 
 }
 
@@ -113,6 +125,13 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 						found = true
 					}
 
+					// Ignore anything going local, such as port forwarding
+					if ip4.DstIP.String() == "127.0.0.1" || ip4.SrcIP.String() == "127.0.0.1" {
+						found = true
+					}
+
+					logUniqueConn(fmt.Sprintf("tcp:%s:%d", ip4.DstIP.String(), port))
+
 					// Ensure we ignore ports we provide and don't try to
 					// create a listener on that port
 					// We don't use a filter so we can pick up remote IPs, even if they
@@ -128,11 +147,6 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 						if p == srcPort {
 							found = true
 						}
-					}
-
-					// Ignore anything going local, such as port forwarding
-					if ip4.DstIP.String() == "127.0.0.1" || ip4.SrcIP.String() == "127.0.0.1" {
-						found = true
 					}
 
 					// Create listener if it doesn't match anything above
@@ -159,6 +173,12 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 
 				}
 			} else if layerType == layers.LayerTypeUDP {
+
+				port := uint16(udp.DstPort)
+
+				if port != 53 {
+					logUniqueConn(fmt.Sprintf("udp:%s:%d", ip4.DstIP.String(), port))
+				}
 
 			} else if layerType == layers.LayerTypeIPv4 {
 				if ip4.DstIP.String() != ipaddr && ip4.SrcIP.String() != ipaddr && strings.ToLower(eth.SrcMAC.String()) != mac {
