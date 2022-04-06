@@ -161,6 +161,6 @@ verify_data ${LOG_NAME} "tcp:${DIRECT_IP}:443"
 verify_data ${LOG_NAME} "tcp:${EXTERNAL_IP}:4545"
 verify_data ${LOG_NAME} "tcp:${EXTERNAL_IP}:7070"
 verify_data ${LOG_NAME} "udp:${DIRECT_IP}:1111"
-verify_data ${LOG_NAME} "udp:${DIRECT_IP}:1112"
+verify_data ${LOG_NAME} "udp:${EXTERNAL_IP}:1112"
 
 rm /tmp/${LOG_NAME}
