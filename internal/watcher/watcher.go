@@ -129,8 +129,9 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 					if ip4.DstIP.String() == "127.0.0.1" || ip4.SrcIP.String() == "127.0.0.1" {
 						found = true
 					}
-
-					logUniqueConn(fmt.Sprintf("tcp:%s:%d", ip4.DstIP.String(), port))
+					if ip4.DstIP != nil {
+						logUniqueConn(fmt.Sprintf("tcp|%s|%d", ip4.DstIP.String(), port))
+					}
 
 					// Ensure we ignore ports we provide and don't try to
 					// create a listener on that port
@@ -177,7 +178,7 @@ func watcherRun(ipaddr string, mac string, iface string, pcapFilter string, igno
 				port := uint16(udp.DstPort)
 
 				if port != 53 {
-					logUniqueConn(fmt.Sprintf("udp:%s:%d", ip4.DstIP.String(), port))
+					logUniqueConn(fmt.Sprintf("udp|%s|%d", ip4.DstIP.String(), port))
 				}
 
 			} else if layerType == layers.LayerTypeIPv4 {

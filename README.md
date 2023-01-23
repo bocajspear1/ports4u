@@ -31,6 +31,39 @@ Ports4u currently runs the following services:
 * HTTP on port 80
 * TLS on port 443
 
+## Data
+
+All logs are available in the `logs` subdirectory. Ports4u will create it on startup if not already present.
+
+### HOST-PORT.log
+
+Contains the contents sent to Ports4u, with the remote IP and port in the filename.
+
+Data recieved is prepended with 
+```
+<<<<<<<< <REMOTE_IP> ----------------------------
+```
+
+While data sent is prepended with:
+```
+>>>>>>>> <REMOTE_IP> ----------------------------
+```
+### ip_list.txt
+
+Contains a newline separated list of IPs seen being connected to.
+
+### domains.txt
+
+Contains a newline separated list of domains been requested.
+
+### conn_list.txt
+
+Contains a list of connections seen, the format is:
+
+```
+tcp or udp|<IP>|<PORT>
+```
+
 ## TODO
 
 * More services to forward to
