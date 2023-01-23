@@ -153,14 +153,14 @@ echo "Testing conn_list"
 LOG_NAME=conn_list.txt
 
 docker cp ${NAME}:/opt/ports4u/logs/${LOG_NAME} /tmp/${LOG_NAME}
-verify_data ${LOG_NAME} "tcp:${DIRECT_IP}:80"
-verify_data ${LOG_NAME} "tcp:${DIRECT_IP}:8080"
-verify_data ${LOG_NAME} "tcp:${DIRECT_IP}:9999"
-verify_data ${LOG_NAME} "tcp:${DIRECT_IP}:3000"
-verify_data ${LOG_NAME} "tcp:${DIRECT_IP}:443"
-verify_data ${LOG_NAME} "tcp:${EXTERNAL_IP}:4545"
-verify_data ${LOG_NAME} "tcp:${EXTERNAL_IP}:7070"
-verify_data ${LOG_NAME} "udp:${DIRECT_IP}:1111"
-verify_data ${LOG_NAME} "udp:${EXTERNAL_IP}:1112"
+verify_data ${LOG_NAME} "tcp|${DIRECT_IP}|80"
+verify_data ${LOG_NAME} "tcp|${DIRECT_IP}|8080"
+verify_data ${LOG_NAME} "tcp|${DIRECT_IP}|9999"
+verify_data ${LOG_NAME} "tcp|${DIRECT_IP}|3000"
+verify_data ${LOG_NAME} "tcp|${DIRECT_IP}|443"
+verify_data ${LOG_NAME} "tcp|${EXTERNAL_IP}|4545"
+verify_data ${LOG_NAME} "tcp|${EXTERNAL_IP}|7070"
+verify_data ${LOG_NAME} "udp|${DIRECT_IP}|1111"
+verify_data ${LOG_NAME} "udp|${EXTERNAL_IP}|1112"
 
 rm /tmp/${LOG_NAME}
